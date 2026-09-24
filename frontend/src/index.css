@@ -1,0 +1,147 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #F8FAFC;
+    color: #0F172A;
+}
+
+code, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+    :root {
+        --background: 210 40% 98%;        /* #F8FAFC */
+        --foreground: 222 47% 11%;        /* #0F172A */
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 160 84% 30%;           /* emerald-700 #059669 */
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 96%;         /* slate-100 */
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 47%;  /* slate-500 */
+        --accent: 217 91% 60%;            /* blue accent */
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 91%;            /* slate-200 */
+        --input: 214 32% 91%;
+        --ring: 160 84% 30%;
+        --chart-1: 160 84% 39%;
+        --chart-2: 217 91% 60%;
+        --chart-3: 38 92% 50%;
+        --chart-4: 262 83% 58%;
+        --chart-5: 340 82% 52%;
+        --radius: 0.75rem;
+
+        --sidebar-bg: 222 47% 11%;
+        --sidebar-active: 217 33% 17%;
+        --sidebar-text: 215 20% 65%;
+    }
+    .dark {
+        --background: 222 40% 6%;
+        --foreground: 210 40% 98%;
+        --card: 222 39% 11%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222 39% 11%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 160 84% 40%;
+        --primary-foreground: 154 79% 15%;
+        --secondary: 217 33% 17%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217 33% 17%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 217 91% 60%;
+        --accent-foreground: 210 40% 98%;
+        --destructive: 0 63% 31%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217 33% 17%;
+        --input: 217 33% 17%;
+        --ring: 160 84% 40%;
+
+        --sidebar-bg: 222 47% 4%;
+        --sidebar-active: 222 39% 11%;
+        --sidebar-text: 215 20% 55%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+    h1, h2, h3, h4 {
+        letter-spacing: -0.02em;
+    }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+}
+
+/* Utility classes */
+.kpi-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+
+.card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08);
+}
+
+.sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: 0.6rem;
+    color: hsl(var(--sidebar-text));
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: all 0.15s ease;
+}
+.sidebar-link:hover {
+    color: #F8FAFC;
+    background: hsl(var(--sidebar-active));
+}
+.sidebar-link.active {
+    color: #F8FAFC;
+    background: hsl(var(--sidebar-active));
+    box-shadow: inset 3px 0 0 hsl(160 84% 40%);
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+}

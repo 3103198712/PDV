@@ -1,0 +1,195 @@
+{
+  "project_name": "PDV Pro - Sistema de Gestão de Vendas e PDV",
+  "language": "pt-BR",
+  "archetype": "THE PERFORMANCE PRO / SWISS HIGH-CONTRAST",
+  "theme_strategy": {
+    "default_mode": "light",
+    "has_toggle": true,
+    "description": "Clean, slate-tinted modern dashboard with emerald-green kinetic accents for financial gains, high readability for cashiers/managers, dense tabular layouts and fast checkout execution."
+  },
+  "typography": {
+    "heading_font": "Plus Jakarta Sans, Outfit, sans-serif",
+    "body_font": "Plus Jakarta Sans, Inter, sans-serif",
+    "mono_font": "JetBrains Mono, Fira Code, monospace",
+    "font_weights": {
+      "light": "300",
+      "regular": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700",
+      "heavy": "800"
+    },
+    "scale": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl tracking-tight font-extrabold",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg font-semibold",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "subtext": "text-xs sm:text-sm text-slate-500 dark:text-slate-400",
+      "label": "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400",
+      "kpi_value": "text-3xl lg:text-4xl font-extrabold tracking-tight font-mono"
+    }
+  },
+  "colors": {
+    "light_mode": {
+      "background": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "surface_elevated": "#F1F5F9",
+      "border": "#E2E8F0",
+      "border_hover": "#CBD5E1",
+      "text_primary": "#0F172A",
+      "text_secondary": "#475569",
+      "text_muted": "#64748B",
+      "primary": "#059669",
+      "primary_hover": "#047857",
+      "primary_foreground": "#FFFFFF",
+      "accent": "#2563EB",
+      "accent_foreground": "#FFFFFF",
+      "warning": "#D97706",
+      "warning_light": "#FEF3C7",
+      "destructive": "#DC2626",
+      "destructive_light": "#FEE2E2",
+      "success": "#16A34A",
+      "success_light": "#DCFCE7",
+      "sidebar_bg": "#0F172A",
+      "sidebar_text": "#94A3B8",
+      "sidebar_text_active": "#F8FAFC",
+      "sidebar_active_bg": "#1E293B"
+    },
+    "dark_mode": {
+      "background": "#090D16",
+      "surface": "#111827",
+      "surface_elevated": "#1F2937",
+      "border": "#1F2937",
+      "border_hover": "#374151",
+      "text_primary": "#F9FAFB",
+      "text_secondary": "#9CA3AF",
+      "text_muted": "#6B7280",
+      "primary": "#10B981",
+      "primary_hover": "#059669",
+      "primary_foreground": "#064E3B",
+      "accent": "#3B82F6",
+      "accent_foreground": "#FFFFFF",
+      "warning": "#F59E0B",
+      "warning_light": "#451A03",
+      "destructive": "#EF4444",
+      "destructive_light": "#450A0A",
+      "success": "#22C55E",
+      "success_light": "#052E16",
+      "sidebar_bg": "#0B0F19",
+      "sidebar_text": "#6B7280",
+      "sidebar_text_active": "#F9FAFB",
+      "sidebar_active_bg": "#111827"
+    },
+    "chart_palette": [
+      "#10B981",
+      "#3B82F6",
+      "#F59E0B",
+      "#8B5CF6",
+      "#EC4899",
+      "#06B6D4"
+    ]
+  },
+  "layout_and_navigation": {
+    "structure": "Sidebar fixa à esquerda com ícones e rótulos + Top Header com perfil, busca rápida de código de barras, seletor de papel (Admin/Gerente/Operador) e toggle de tema.",
+    "sidebar_width": "w-64 (expandida) / w-20 (recolhida)",
+    "mobile_drawer": "Sheet lateral responsiva via Radix/Shadcn",
+    "padding_standard": "p-4 sm:p-6 lg:p-8",
+    "content_max_width": "max-w-7xl mx-auto",
+    "card_radius": "rounded-xl",
+    "grid_modes": {
+      "dashboard_kpis": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6",
+      "pos_view": "grid grid-cols-1 lg:grid-cols-12 gap-6 (8 cols para catálogo e busca + 4 cols para carrinho e checkout)",
+      "table_filters": "flex flex-wrap items-center justify-between gap-4 mb-6"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "subtle": "shadow-[0_1px_3px_rgba(0,0,0,0.05)]",
+      "card": "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] dark:shadow-none",
+      "modal": "shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
+    },
+    "borders": "1px solid var(--border) com cantos suavizados rounded-xl",
+    "badges": "rounded-full px-2.5 py-0.5 text-xs font-medium inline-flex items-center gap-1",
+    "glassmorphism": "backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border border-slate-200/50 dark:border-slate-800/50"
+  },
+  "motion": {
+    "page_transitions": "framer-motion opacity and slight slide-y (y: 8 to 0, duration: 0.2s)",
+    "kpi_hover": "transition-transform duration-200 hover:-translate-y-1 hover:shadow-md",
+    "button_active": "active:scale-95 transition-all duration-150",
+    "toast": "sonner notifications na posição bottom-right com feedback tátil de sucesso/erro"
+  },
+  "components_strategy": {
+    "shadcn_primitives_used": [
+      "Dialog / AlertDialog para exclusão e confirmação de venda",
+      "DropdownMenu para ações de tabela (editar, ver histórico, alterar status)",
+      "Tabs para alternar visões de relatórios e categorias do PDV",
+      "Select para filtros de forma de pagamento e níveis de usuário",
+      "Badge para status de estoque (OK, Baixo, Esgotado) e status de vendas",
+      "Input com ícone de scanner de código de barras para busca ultra-rápida",
+      "Table com cabeçalho fixo, ordenação por coluna e paginação limpa",
+      "Sheet para menu mobile e detalhes rápidos de pedido"
+    ],
+    "charts": {
+      "library": "Recharts",
+      "types": [
+        "AreaChart (faturamento ao longo do tempo com gradiente suave)",
+        "BarChart (produtos mais vendidos e vendas por horário)",
+        "PieChart / Donut (distribuição por formas de pagamento: Pix, Cartão Crédito/Débito, Dinheiro)"
+      ]
+    }
+  },
+  "modules_and_key_screens": {
+    "login": "Tela de login limpa com seletor rápido de perfis demonstrativos (Admin, Gerente, Operador) para facilidade de testes",
+    "dashboard": "KPIs (Faturamento Hoje, Vendas Hoje, Ticket Médio, Alertas Estoque Baixo) + Gráfico de tendência semanal + Lista de Vendas Recentes",
+    "pdv_vendas": "Tela de Frente de Caixa rápida com busca/scanner de código de barras, seletor de cliente, atalhos de categoria, resumo do carrinho com cálculo de troco/desconto e finalização de pagamento (Pix, Crédito, Débito, Dinheiro)",
+    "produtos": "Tabela de gestão de produtos com CRUD completo, código de barras, categoria, preço de custo/venda, estoque atual e nível mínimo de alerta",
+    "estoque": "Gestão de movimentações (Entradas, Saídas, Ajustes de Inventário) e alertas em destaque",
+    "clientes": "Cadastro de clientes, histórico de compras acumuladas e estatística de ticket médio por cliente",
+    "relatorios": "DRE simplificado, ranking de produtos, vendas por forma de pagamento e exportação de dados",
+    "usuarios": "Gestão de usuários do sistema com atribuição de papéis (Admin, Gerente, Operador)"
+  },
+  "image_urls": {
+    "pos_hardware": "https://images.pexels.com/photos/12935042/pexels-photo-12935042.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "store_counter": "https://images.unsplash.com/photo-1556740772-1a741367b93e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwyfHxyZXRhaWwlMjBwb3MlMjBzdG9yZSUyMG1hbmFnZW1lbnQlMjBzdG9yZSUyMG93bmVyJTIwY291bnRlciUyMHByb2R1Y3QlMjBpbnZlbnRvcnl8ZW58MHx8fHwxNzkwMjgxNTg4fDA&ixlib=rb-4.1.0&q=85",
+    "inventory_team": "https://images.pexels.com/photos/8475203/pexels-photo-8475203.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "store_manager": "https://images.unsplash.com/photo-1648824572347-517357c9c44e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHxfHxyZXRhaWwlMjBwb3MlMjBzdG9yZSUyMG1hbmFnZW1lbnQlMjBzdG9yZSUyMG93bmVyJTIwY291bnRlciUyMHByb2R1Y3QlMjBpbnZlbnRvcnl8ZW58MHx8fHwxNzkwMjgxNTg4fDA&ixlib=rb-4.1.0&q=85",
+    "avatars": {
+      "admin": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+      "manager": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80",
+      "operator": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=250&q=80"
+    }
+  },
+  "accessibility": {
+    "wcag_target": "AA",
+    "contrast_ratio": "Minimum 4.5:1 for standard text, 3:1 for large headings and UI icons",
+    "focus_states": "ring-2 ring-emerald-500 ring-offset-2 dark:ring-offset-slate-900 focus:outline-none",
+    "keyboard_navigation": "Atalhos de teclado no PDV (ex: F2 para Nova Venda, F4 para Busca, Esc para Limpar Carrinho, Enter para Finalizar)"
+  },
+  "testing_and_data_attributes": {
+    "rule": "Todos os elementos interativos, formulários, tabelas, botões e KPIs DEVEM incluir data-testid no padrão kebab-case.",
+    "examples": [
+      "data-testid=\"sidebar-nav-vendas\"",
+      "data-testid=\"kpi-faturamento-hoje\"",
+      "data-testid=\"input-barcode-search\"",
+      "data-testid=\"btn-finalizar-venda\"",
+      "data-testid=\"table-produtos-row-1\"",
+      "data-testid=\"select-forma-pagamento\"",
+      "data-testid=\"user-role-badge\""
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Utilize a biblioteca Lucide React (já instalada) para ícones operacionais de PDV (ShoppingCart, Package, BarChart3, Users, Receipt, ArrowUpRight, AlertTriangle, Search, CreditCard, QrCode, DollarSign).",
+    "Garanta suporte completo a Português do Brasil (PT-BR) em todos os textos, números formatados em R$ (Real Brasileiro: Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })) e datas no formato DD/MM/AAAA.",
+    "Implemente um Mock Service Worker / Estado Local com dados de seed ricos para simular a base de dados SQL do software de PDV (mínimo 15 produtos com fotos/preços/código de barras, 10 clientes, 25 histórico de vendas, 3 usuários pré-cadastrados).",
+    "Forneça facilidade no Login com botões de 'Acesso Rápido de Teste' para entrar direto como Admin, Gerente ou Operador.",
+    "No PDV, inclua feedback sonoro/visual sutil ao bipar ou adicionar um item ao carrinho.",
+    "Mantenha o layout estritamente responsivo e limpo, garantindo que cashiers possam usar o sistema com toque ou teclado."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "avoid_ai_slop": "Evite gradientes roxos genéricos ou fundos pretos chapados sem contraste. Use Slate/Emerald com tipografia nítida.",
+    "spacing": "Use espaçamento generoso de 16px a 32px nos containers principais, mas mantenha tabelas com densidade de dados equilibrada.",
+    "no_transparent_overlays": "Dropdowns, modais e tooltips não devem ter fundo 100% transparente. Use fundos opacos ou glassmorphism denso com backdrop-blur.",
+    "data_testid_requirement": "Adicione data-testid em todos os elementos principais para garantir compatibilidade com testes automatizados."
+  }
+}
