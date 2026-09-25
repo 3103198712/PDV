@@ -11,6 +11,10 @@ import Sales from "@/pages/Sales";
 import Stock from "@/pages/Stock";
 import Reports from "@/pages/Reports";
 import Users from "@/pages/Users";
+import Tables from "@/pages/Tables";
+import Orders from "@/pages/Orders";
+import OrderDetail, { NewOrder } from "@/pages/OrderDetail";
+import { KitchenTicket, PreConta, Cupom } from "@/pages/Print";
 
 function Protected({ roles, children }) {
   const { user, loading } = useAuth();
@@ -29,6 +33,10 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Protected><Dashboard /></Protected>} />
+            <Route path="/mesas" element={<Protected><Tables /></Protected>} />
+            <Route path="/comandas" element={<Protected><Orders /></Protected>} />
+            <Route path="/comanda/novo" element={<Protected><NewOrder /></Protected>} />
+            <Route path="/comanda/:id" element={<Protected><OrderDetail /></Protected>} />
             <Route path="/pdv" element={<Protected><PDV /></Protected>} />
             <Route path="/vendas" element={<Protected><Sales /></Protected>} />
             <Route path="/produtos" element={<Protected><Products /></Protected>} />
@@ -36,6 +44,9 @@ function App() {
             <Route path="/clientes" element={<Protected><Customers /></Protected>} />
             <Route path="/relatorios" element={<Protected roles={["admin", "gerente"]}><Reports /></Protected>} />
             <Route path="/usuarios" element={<Protected roles={["admin"]}><Users /></Protected>} />
+            <Route path="/print/kitchen/:id" element={<Protected><KitchenTicket /></Protected>} />
+            <Route path="/print/preconta/:id" element={<Protected><PreConta /></Protected>} />
+            <Route path="/print/cupom/:id" element={<Protected><Cupom /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

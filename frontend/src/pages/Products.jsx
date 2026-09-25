@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableHead, TableRow, TableCell, TableBody, TableHeader } from "@/components/ui/table";
 import { toast } from "sonner";
 import { brl } from "@/lib/format";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
-const empty = { name: "", barcode: "", category: "Geral", cost_price: 0, sale_price: 0, stock: 0, min_stock: 5, active: true };
+const empty = { name: "", barcode: "", category: "Geral", sector: "cozinha_quente", cost_price: 0, sale_price: 0, stock: 0, min_stock: 5, active: true };
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -128,6 +129,18 @@ export default function Products() {
               <div className="space-y-1">
                 <Label>Código de barras</Label>
                 <Input value={form.barcode || ""} onChange={(e) => setForm({ ...form, barcode: e.target.value })} data-testid="input-produto-barcode" />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Setor de impressão</Label>
+                <Select value={form.sector} onValueChange={(v) => setForm({ ...form, sector: v })}>
+                  <SelectTrigger data-testid="select-produto-setor"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cozinha_quente">Cozinha Quente</SelectItem>
+                    <SelectItem value="cozinha_fria">Cozinha Fria</SelectItem>
+                    <SelectItem value="bar">Bar</SelectItem>
+                    <SelectItem value="buffet">Buffet</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1">
                 <Label>Preço de custo</Label>

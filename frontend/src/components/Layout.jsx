@@ -3,12 +3,14 @@ import { useAuth } from "@/context/AuthContext";
 import { roleLabel } from "@/lib/format";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, Warehouse,
-  BarChart3, UserCog, LogOut, Receipt, Store,
+  BarChart3, UserCog, LogOut, Receipt, Store, Utensils, ClipboardList,
 } from "lucide-react";
 
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-dashboard" },
-  { to: "/pdv", icon: ShoppingCart, label: "Frente de Caixa", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-pdv" },
+  { to: "/mesas", icon: Utensils, label: "Salão · Mesas", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-mesas" },
+  { to: "/comandas", icon: ClipboardList, label: "Comandas", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-comandas" },
+  { to: "/pdv", icon: ShoppingCart, label: "Balcão (Rápido)", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-pdv" },
   { to: "/vendas", icon: Receipt, label: "Vendas", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-vendas" },
   { to: "/produtos", icon: Package, label: "Produtos", roles: ["admin", "gerente", "operador"], testid: "sidebar-nav-produtos" },
   { to: "/estoque", icon: Warehouse, label: "Estoque", roles: ["admin", "gerente"], testid: "sidebar-nav-estoque" },

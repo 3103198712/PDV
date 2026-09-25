@@ -1,0 +1,27 @@
+{
+  "summary": "First-finish smoke test of PDV Pro backend and frontend. Backend: all critical endpoints work (auth, products, customers, sales, dashboard, sale creation with stock decrement, insufficient stock 400, cancel sale returns stock, role restrictions 403, delete-self 400, reports). Frontend: admin login, dashboard KPIs+charts, PDV sale flow end-to-end, product creation, operator role sidebar hides restricted links.",
+  "tested_scope": ["frontend", "backend", "auth", "integration"],
+  "passed": [
+    "POST /api/auth/login admin returns access_token+user; wrong password returns 401",
+    "GET /api/auth/me with Bearer returns admin user",
+    "GET /api/products returns 20; GET /api/customers returns 10; GET /api/sales returns 25",
+    "GET /api/reports/dashboard returns faturamento_hoje, faturamento_mes, vendas_hoje, ticket_medio, alertas_estoque_baixo, sales_last_7_days, low_stock_products, recent_sales, payment_distribution",
+    "POST /api/sales creates sale (requires unit_price), decrements stock 60->58",
+    "POST /api/sales insufficient stock returns 400 with message 'Estoque insuficiente'",
+    "POST /api/sales/{id}/cancel returns success:true and restores stock to 60",
+    "Operador POST /api/products returns 403; Gerente POST /api/auth/register returns 403",
+    "DELETE /api/users/{self} returns 400 'Não é possível excluir a si mesmo'",
+    "POST /api/stock/movements entrada returns 200",
+    "GET /api/reports/top-products (10 items), top-customers (5), sales-by-period?days=30 (30 items)",
+    "Frontend: quick-login-admin renders dashboard with 4 KPIs, 7-day chart, payment donut, recent sales, low-stock lists",
+    "Frontend PDV: search 'Coca' -> product-card click -> cart-item -> payment-pix -> btn-finalizar-venda -> cart cleared and dashboard faturamento incremented from R$67,84 to R$77,74",
+    "Frontend Products: btn-novo-produto modal -> fill nome/preço/estoque -> salvar -> product 'ProdT82317' appears in table",
+    "Frontend Operator: sidebar shows pdv but hides estoque/relatorios/usuarios (visual confirm: only Dashboard, Frente de Caixa, Vendas, Produtos, Clientes visible)"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "Dashboard route is '/' not '/dashboard'. POST /api/sales requires unit_price in items (not just product_id+quantity). No GET /api/products/{id} endpoint; product stock verified via list. Not covered in this smoke pass: Customers create UI, Sales detail modal UI, Stock movement UI, Reports 3 tabs UI, Users create UI. Backend routes for these were spot-checked (stock movement worked)."
+}

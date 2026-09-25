@@ -131,6 +131,7 @@ class ProductIn(BaseModel):
     name: str
     barcode: Optional[str] = None
     category: str = "Geral"
+    sector: Literal["cozinha_quente", "cozinha_fria", "bar", "buffet"] = "cozinha_quente"
     cost_price: float = 0
     sale_price: float
     stock: int = 0
@@ -585,6 +586,286 @@ async def root():
     return {"app": "PDV Pro API", "status": "ok"}
 
 
+# ============================================================
+# TABLES (Mesas)
+# ============================================================
+@api.get("/tables")
+async def list_tables(user: dict = Depends(get_current_user)):
+    docs = await db.tables.find({}, {"_id": 0}).sort("number", 1).to_list(200)
+    return docs
+
+
+@api.put("/tables/{table_id}")
+async def update_table(table_id: str, payload: dict, user: dict = Depends(require_roles("admin", "gerente"))):
+    allowed = {k: v for k, v in payload.items() if k in {"seats", "status", "number"}}
+    r = await db.tables.find_one_and_update({"id": table_id}, {"$set": allowed}, return_document=True)
+    if not r:
+        raise HTTPException(status_code=404, detail="Mesa não encontrada")
+    r.pop("_id", None)
+    return r
+
+
+# ============================================================
+# ORDERS (Comandas) — mesa/hotel/ifood/buffet
+# ============================================================
+class OrderItemIn(BaseModel):
+    product_id: str
+    quantity: int
+    notes: Optional[str] = None
+
+
+class OrderCreateIn(BaseModel):
+    channel: Literal["mesa", "hotel", "ifood", "buffet"]
+    table_id: Optional[str] = None
+    hotel_room: Optional[str] = None
+    hotel_guest: Optional[str] = None
+    ifood_number: Optional[str] = None
+    event_name: Optional[str] = None
+    customer_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OrderAddItemsIn(BaseModel):
+    items: List[OrderItemIn]
+
+
+class OrderCloseIn(BaseModel):
+    payment_method: Literal["dinheiro", "pix", "credito", "debito", "hotel_lancamento"]
+    discount: float = 0
+    service_fee_percent: float = 10.0  # taxa de serviço padrão
+
+
+def _enrich_items(items_in: List[OrderItemIn], products_by_id: dict):
+    out = []
+    total = 0.0
+    for it in items_in:
+        p = products_by_id.get(it.product_id)
+        if not p:
+            raise HTTPException(status_code=404, detail=f"Produto {it.product_id} não encontrado")
+        line = p["sale_price"] * it.quantity
+        total += line
+        out.append({
+            "id": str(uuid.uuid4()),
+            "product_id": p["id"],
+            "product_name": p["name"],
+            "sector": p.get("sector", "cozinha_quente"),
+            "quantity": it.quantity,
+            "unit_price": p["sale_price"],
+            "line_total": line,
+            "notes": it.notes,
+            "status": "pendente",  # pendente, preparando, pronto, entregue
+            "printed": False,
+            "created_at": iso(now_utc()),
+        })
+    return out, total
+
+
+@api.get("/orders")
+async def list_orders(status: Optional[str] = None, channel: Optional[str] = None, user: dict = Depends(get_current_user)):
+    q = {}
+    if status: q["status"] = status
+    if channel: q["channel"] = channel
+    docs = await db.orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.get("/orders/{order_id}")
+async def get_order(order_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Comanda não encontrada")
+    return doc
+
+
+@api.post("/orders")
+async def create_order(payload: OrderCreateIn, user: dict = Depends(get_current_user)):
+    if payload.channel == "mesa" and not payload.table_id:
+        raise HTTPException(status_code=400, detail="Mesa obrigatória para canal mesa")
+    if payload.channel == "hotel" and not payload.hotel_room:
+        raise HTTPException(status_code=400, detail="Nº do quarto obrigatório para canal hotel")
+
+    table_number = None
+    if payload.table_id:
+        table = await db.tables.find_one({"id": payload.table_id})
+        if not table:
+            raise HTTPException(status_code=404, detail="Mesa não encontrada")
+        if table["status"] == "ocupada":
+            raise HTTPException(status_code=400, detail="Mesa já ocupada")
+        table_number = table["number"]
+
+    oid = str(uuid.uuid4())
+    order = {
+        "id": oid,
+        "code": f"C{int(now_utc().timestamp())}",
+        "channel": payload.channel,
+        "table_id": payload.table_id,
+        "table_number": table_number,
+        "hotel_room": payload.hotel_room,
+        "hotel_guest": payload.hotel_guest,
+        "ifood_number": payload.ifood_number,
+        "event_name": payload.event_name,
+        "customer_id": payload.customer_id,
+        "operator_id": user["id"],
+        "operator_name": user["name"],
+        "items": [],
+        "subtotal": 0.0,
+        "discount": 0.0,
+        "service_fee": 0.0,
+        "total": 0.0,
+        "status": "aberta",  # aberta, fechada, cancelada
+        "payment_method": None,
+        "notes": payload.notes,
+        "created_at": iso(now_utc()),
+        "closed_at": None,
+    }
+    await db.orders.insert_one(order)
+
+    if payload.table_id:
+        await db.tables.update_one({"id": payload.table_id}, {"$set": {"status": "ocupada", "current_order_id": oid}})
+
+    order.pop("_id", None)
+    return order
+
+
+@api.post("/orders/{order_id}/items")
+async def add_items(order_id: str, payload: OrderAddItemsIn, user: dict = Depends(get_current_user)):
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Comanda não encontrada")
+    if order["status"] != "aberta":
+        raise HTTPException(status_code=400, detail="Comanda não está aberta")
+
+    product_ids = [it.product_id for it in payload.items]
+    prods = await db.products.find({"id": {"$in": product_ids}}, {"_id": 0}).to_list(1000)
+    p_by_id = {p["id"]: p for p in prods}
+
+    new_items, added_total = _enrich_items(payload.items, p_by_id)
+    new_subtotal = order["subtotal"] + added_total
+    new_total = new_subtotal
+
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$push": {"items": {"$each": new_items}}, "$set": {"subtotal": new_subtotal, "total": new_total}},
+    )
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    return order
+
+
+@api.post("/orders/{order_id}/close")
+async def close_order(order_id: str, payload: OrderCloseIn, user: dict = Depends(get_current_user)):
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Comanda não encontrada")
+    if order["status"] != "aberta":
+        raise HTTPException(status_code=400, detail="Comanda não está aberta")
+
+    subtotal = order["subtotal"]
+    service_fee = round(subtotal * (payload.service_fee_percent / 100), 2)
+    discount = payload.discount or 0
+    total = max(0.0, subtotal + service_fee - discount)
+
+    # Decrement stock (skip buffet items which are unlimited)
+    for it in order["items"]:
+        product = await db.products.find_one({"id": it["product_id"]}, {"_id": 0})
+        if not product:
+            continue
+        if product.get("sector") == "buffet":
+            continue
+        await db.products.update_one({"id": it["product_id"]}, {"$inc": {"stock": -it["quantity"]}})
+        await db.stock_movements.insert_one({
+            "id": str(uuid.uuid4()),
+            "product_id": it["product_id"],
+            "product_name": it["product_name"],
+            "type": "saida",
+            "quantity": it["quantity"],
+            "reason": f"Comanda {order['code']}",
+            "created_at": iso(now_utc()),
+            "created_by": user["name"],
+        })
+
+    # Create a sale record for reports
+    sid = str(uuid.uuid4())
+    customer_name = "Consumidor"
+    if order.get("channel") == "mesa":
+        customer_name = f"Mesa {order.get('table_number')}"
+    elif order.get("channel") == "hotel":
+        customer_name = f"Hóspede Qto {order.get('hotel_room')}" + (f" — {order.get('hotel_guest')}" if order.get("hotel_guest") else "")
+    elif order.get("channel") == "ifood":
+        customer_name = f"iFood #{order.get('ifood_number') or '-'}"
+    elif order.get("channel") == "buffet":
+        customer_name = f"Evento: {order.get('event_name') or '-'}"
+
+    sale_doc = {
+        "id": sid,
+        "code": f"V{int(now_utc().timestamp())}",
+        "order_id": order_id,
+        "order_code": order["code"],
+        "channel": order["channel"],
+        "customer_id": order.get("customer_id"),
+        "customer_name": customer_name,
+        "operator_id": user["id"],
+        "operator_name": user["name"],
+        "items": [{
+            "product_id": it["product_id"],
+            "product_name": it["product_name"],
+            "quantity": it["quantity"],
+            "unit_price": it["unit_price"],
+            "line_total": it["line_total"],
+        } for it in order["items"]],
+        "subtotal": subtotal,
+        "service_fee": service_fee,
+        "discount": discount,
+        "total": total,
+        "payment_method": payload.payment_method,
+        "status": "concluida",
+        "created_at": iso(now_utc()),
+    }
+    await db.sales.insert_one(sale_doc)
+
+    # Close order
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {
+            "status": "fechada",
+            "payment_method": payload.payment_method,
+            "discount": discount,
+            "service_fee": service_fee,
+            "total": total,
+            "closed_at": iso(now_utc()),
+            "sale_id": sid,
+        }},
+    )
+    # Free table
+    if order.get("table_id"):
+        await db.tables.update_one({"id": order["table_id"]}, {"$set": {"status": "livre", "current_order_id": None}})
+
+    return {"success": True, "sale_id": sid, "total": total, "service_fee": service_fee}
+
+
+@api.post("/orders/{order_id}/cancel")
+async def cancel_order(order_id: str, user: dict = Depends(require_roles("admin", "gerente"))):
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Comanda não encontrada")
+    if order["status"] != "aberta":
+        raise HTTPException(status_code=400, detail="Comanda não está aberta")
+    await db.orders.update_one({"id": order_id}, {"$set": {"status": "cancelada", "closed_at": iso(now_utc())}})
+    if order.get("table_id"):
+        await db.tables.update_one({"id": order["table_id"]}, {"$set": {"status": "livre", "current_order_id": None}})
+    return {"success": True}
+
+
+@api.post("/orders/{order_id}/mark-printed")
+async def mark_printed(order_id: str, user: dict = Depends(get_current_user)):
+    """Mark all pending items as printed (kitchen sent)."""
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {"items.$[elem].printed": True, "items.$[elem].status": "preparando"}},
+        array_filters=[{"elem.printed": False}],
+    )
+    return {"success": True}
+
+
 api.get("/health")(lambda: {"status": "ok"})
 
 
@@ -613,26 +894,37 @@ async def ensure_user(email: str, password: str, name: str, role: str):
 
 
 SEED_PRODUCTS = [
-    ("Coca-Cola 2L", "Bebidas", 5.50, 9.90, 40),
-    ("Guaraná Antarctica 2L", "Bebidas", 4.80, 8.90, 35),
-    ("Água Mineral 500ml", "Bebidas", 0.90, 2.50, 120),
-    ("Cerveja Heineken 350ml", "Bebidas", 3.20, 6.90, 80),
-    ("Suco de Laranja 1L", "Bebidas", 4.10, 7.50, 25),
-    ("Pão Francês (kg)", "Padaria", 8.00, 14.90, 30),
-    ("Bolo de Chocolate", "Padaria", 12.00, 22.00, 8),
-    ("Croissant Recheado", "Padaria", 2.80, 5.50, 20),
-    ("Arroz Tio João 5kg", "Mercearia", 22.00, 32.90, 60),
-    ("Feijão Carioca 1kg", "Mercearia", 6.00, 9.90, 45),
-    ("Açúcar Cristal 1kg", "Mercearia", 3.20, 5.20, 55),
-    ("Óleo de Soja 900ml", "Mercearia", 5.80, 8.90, 35),
-    ("Café Torrado 500g", "Mercearia", 12.50, 21.90, 24),
-    ("Detergente Ypê", "Limpeza", 1.90, 3.50, 90),
-    ("Sabão em Pó Omo 1kg", "Limpeza", 8.90, 15.90, 3),  # low stock alert
-    ("Papel Higiênico 12un", "Limpeza", 14.00, 24.90, 4),  # low stock alert
-    ("Chocolate Lacta 90g", "Doces", 3.20, 6.50, 70),
-    ("Bala de Goma 100g", "Doces", 2.10, 4.50, 100),
-    ("Sabonete Dove 90g", "Higiene", 3.50, 6.90, 40),
-    ("Shampoo Seda 325ml", "Higiene", 8.90, 15.90, 22),
+    # (name, category, sector, cost, price, stock)
+    ("Picanha na Chapa 400g", "Carnes", "cozinha_quente", 28.00, 79.90, 60),
+    ("Filé Mignon Grelhado", "Carnes", "cozinha_quente", 24.00, 69.90, 45),
+    ("Costela BBQ", "Carnes", "cozinha_quente", 22.00, 64.90, 40),
+    ("Frango à Parmegiana", "Massas", "cozinha_quente", 12.00, 42.90, 50),
+    ("Lasanha à Bolonhesa", "Massas", "cozinha_quente", 10.00, 38.90, 35),
+    ("Espaguete ao Molho Sugo", "Massas", "cozinha_quente", 8.00, 32.90, 45),
+    ("Risoto de Camarão", "Massas", "cozinha_quente", 18.00, 58.90, 25),
+    ("Batata Frita Rústica", "Petiscos", "cozinha_quente", 5.00, 24.90, 80),
+    ("Isca de Tilápia", "Petiscos", "cozinha_quente", 12.00, 38.90, 30),
+    ("Salada Caesar", "Saladas", "cozinha_fria", 6.00, 26.90, 40),
+    ("Salada Tropical", "Saladas", "cozinha_fria", 5.00, 22.90, 35),
+    ("Ceviche de Peixe", "Saladas", "cozinha_fria", 15.00, 44.90, 20),
+    ("Bruschetta Italiana", "Entradas", "cozinha_fria", 4.00, 18.90, 40),
+    ("Tábua de Frios", "Entradas", "cozinha_fria", 22.00, 64.90, 15),
+    ("Coca-Cola 350ml", "Refrigerantes", "bar", 2.20, 7.90, 120),
+    ("Guaraná Antarctica 350ml", "Refrigerantes", "bar", 2.00, 7.50, 100),
+    ("Água Mineral 500ml", "Bebidas", "bar", 0.90, 4.50, 150),
+    ("Suco Natural Laranja 400ml", "Bebidas", "bar", 3.00, 12.90, 40),
+    ("Cerveja Heineken 600ml", "Cervejas", "bar", 6.00, 16.90, 80),
+    ("Cerveja Brahma 600ml", "Cervejas", "bar", 4.50, 12.90, 100),
+    ("Caipirinha de Limão", "Drinks", "bar", 4.00, 22.90, 4),  # low stock
+    ("Mojito Cubano", "Drinks", "bar", 5.00, 26.90, 3),  # low stock
+    ("Taça de Vinho Tinto", "Vinhos", "bar", 8.00, 28.90, 40),
+    ("Espresso", "Cafés", "bar", 1.50, 6.90, 200),
+    ("Buffet Livre por Pessoa", "Buffet", "buffet", 25.00, 89.90, 999),
+    ("Estação de Massas (Buffet)", "Buffet", "buffet", 8.00, 32.90, 999),
+    ("Estação de Sobremesas", "Buffet", "buffet", 6.00, 24.90, 999),
+    ("Pudim de Leite", "Sobremesas", "cozinha_fria", 3.00, 16.90, 30),
+    ("Petit Gateau", "Sobremesas", "cozinha_quente", 5.00, 24.90, 20),
+    ("Sorvete 2 Bolas", "Sobremesas", "cozinha_fria", 3.50, 14.90, 60),
 ]
 
 SEED_CUSTOMERS = [
@@ -662,12 +954,13 @@ async def seed_data():
 
     # Products
     if await db.products.count_documents({}) == 0:
-        for i, (name, cat, cost, price, stock) in enumerate(SEED_PRODUCTS):
+        for i, (name, cat, sector, cost, price, stock) in enumerate(SEED_PRODUCTS):
             await db.products.insert_one({
                 "id": str(uuid.uuid4()),
                 "name": name,
                 "barcode": f"789{str(1000000 + i).zfill(10)}",
                 "category": cat,
+                "sector": sector,
                 "cost_price": cost,
                 "sale_price": price,
                 "stock": stock,
@@ -676,6 +969,19 @@ async def seed_data():
                 "created_at": iso(now_utc()),
             })
         logger.info(f"Seeded {len(SEED_PRODUCTS)} products")
+
+    # Seed 30 mesas
+    if await db.tables.count_documents({}) == 0:
+        for i in range(1, 31):
+            await db.tables.insert_one({
+                "id": str(uuid.uuid4()),
+                "number": i,
+                "seats": 4,
+                "status": "livre",  # livre, ocupada, reservada
+                "current_order_id": None,
+                "created_at": iso(now_utc()),
+            })
+        logger.info("Seeded 30 tables")
 
     # Customers
     if await db.customers.count_documents({}) == 0:
