@@ -857,13 +857,407 @@ async def cancel_order(order_id: str, user: dict = Depends(require_roles("admin"
 
 @api.post("/orders/{order_id}/mark-printed")
 async def mark_printed(order_id: str, user: dict = Depends(get_current_user)):
-    """Mark all pending items as printed (kitchen sent)."""
+    """Mark all pending items as printed (kitchen sent) and enqueue print jobs per sector printer."""
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Comanda não encontrada")
+
+    # Group unprinted items by sector
+    groups = {}
+    for it in order["items"]:
+        if it.get("printed"):
+            continue
+        groups.setdefault(it["sector"], []).append(it)
+
+    now = iso(now_utc())
+    enqueued = 0
+    for sector, items in groups.items():
+        printers = await db.printers.find({"sector": sector, "active": True}, {"_id": 0}).to_list(10)
+        if not printers:
+            # No printer configured for this sector, still mark items as printed but skip job
+            continue
+        heading = order["channel"] == "mesa" and f"MESA {order.get('table_number')}" \
+            or (order["channel"] == "hotel" and f"HOTEL Qto {order.get('hotel_room','')}") \
+            or (order["channel"] == "ifood" and f"IFOOD #{order.get('ifood_number','-')}") \
+            or (order["channel"] == "buffet" and f"BUFFET {order.get('event_name','')}") \
+            or order["channel"].upper()
+        escpos_text = escpos_kitchen_ticket(sector, heading, order, items)
+        for printer in printers:
+            await db.print_jobs.insert_one({
+                "id": str(uuid.uuid4()),
+                "printer_id": printer["id"],
+                "printer_name": printer["name"],
+                "printer_ip": printer["ip"],
+                "printer_port": printer["port"],
+                "sector": sector,
+                "kind": "kitchen",
+                "order_id": order_id,
+                "order_code": order["code"],
+                "payload": escpos_text,
+                "status": "pending",
+                "attempts": 0,
+                "created_at": now,
+                "sent_at": None,
+                "error": None,
+            })
+            enqueued += 1
+
+    # Mark all items as printed and move to preparando (KDS)
     await db.orders.update_one(
         {"id": order_id},
-        {"$set": {"items.$[elem].printed": True, "items.$[elem].status": "preparando"}},
+        {"$set": {
+            "items.$[elem].printed": True,
+            "items.$[elem].status": "preparando",
+            "items.$[elem].printed_at": now,
+        }},
         array_filters=[{"elem.printed": False}],
     )
+    return {"success": True, "jobs_enqueued": enqueued}
+
+
+# ============================================================
+# ESC/POS Generation
+# ============================================================
+ESC = "\x1b"
+GS = "\x1d"
+
+def escpos_kitchen_ticket(sector: str, heading: str, order: dict, items: list) -> str:
+    """Generate ESC/POS text (with control chars) for kitchen sector."""
+    sector_label = {
+        "cozinha_quente": "COZINHA QUENTE",
+        "cozinha_fria": "COZINHA FRIA",
+        "bar": "BAR",
+        "buffet": "BUFFET",
+    }.get(sector, sector.upper())
+
+    lines = []
+    lines.append(ESC + "@")  # init
+    lines.append(ESC + "a" + "\x01")  # center
+    lines.append(GS + "!" + "\x11")  # double size
+    lines.append(sector_label + "\n")
+    lines.append(GS + "!" + "\x00")  # normal
+    lines.append(ESC + "E" + "\x01")  # bold on
+    lines.append(heading + "\n")
+    lines.append(ESC + "E" + "\x00")
+    lines.append(f"Comanda {order['code']}\n")
+    lines.append(datetime.now(timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M") + "\n")
+    lines.append(f"Garcom: {order['operator_name']}\n")
+    lines.append(ESC + "a" + "\x00")  # left
+    lines.append("-" * 42 + "\n")
+    for it in items:
+        lines.append(ESC + "E" + "\x01")
+        lines.append(f"{it['quantity']}x {it['product_name']}\n")
+        lines.append(ESC + "E" + "\x00")
+        if it.get("notes"):
+            lines.append(f"  Obs: {it['notes']}\n")
+    lines.append("-" * 42 + "\n")
+    lines.append(ESC + "a" + "\x01")
+    lines.append("*** PREPARAR ***\n")
+    lines.append("\n\n\n")
+    lines.append(GS + "V" + "\x00")  # cut
+    return "".join(lines)
+
+
+def escpos_receipt(sale: dict, kind: str = "cupom") -> str:
+    """Generate ESC/POS for pré-conta or cupom."""
+    lines = []
+    lines.append(ESC + "@")
+    lines.append(ESC + "a" + "\x01")
+    lines.append(ESC + "E" + "\x01")
+    lines.append(("*** PRE-CONTA ***" if kind == "preconta" else "*** CUPOM ***") + "\n")
+    lines.append("PDV Pro Restaurante\n")
+    lines.append(ESC + "E" + "\x00")
+    if kind == "preconta":
+        lines.append("Sem valor fiscal\n")
+    lines.append("-" * 42 + "\n")
+    lines.append(ESC + "a" + "\x00")
+    lines.append(f"{sale.get('customer_name','Consumidor')}\n")
+    lines.append(f"{'Venda' if kind=='cupom' else 'Comanda'}: {sale.get('code') or sale.get('order_code','')}\n")
+    lines.append(datetime.now(timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M") + "\n")
+    lines.append("Atendente: " + sale.get("operator_name", "-") + "\n")
+    lines.append("-" * 42 + "\n")
+    for it in sale["items"]:
+        name = it["product_name"][:28]
+        left = f"{it['quantity']}x {name}"
+        right = f"{it['line_total']:.2f}"
+        pad = max(1, 42 - len(left) - len(right))
+        lines.append(left + " " * pad + right + "\n")
+    lines.append("-" * 42 + "\n")
+
+    def row(label, value):
+        v = f"{value:.2f}" if isinstance(value, (int, float)) else str(value)
+        pad = max(1, 42 - len(label) - len(v))
+        return label + " " * pad + v + "\n"
+
+    lines.append(row("Subtotal", sale.get("subtotal", 0)))
+    if sale.get("service_fee", 0):
+        lines.append(row("Servico", sale["service_fee"]))
+    if sale.get("discount", 0):
+        lines.append(row("Desconto", -sale["discount"]))
+    lines.append(ESC + "E" + "\x01")
+    lines.append(GS + "!" + "\x01")
+    lines.append(row("TOTAL", sale.get("total", 0)))
+    lines.append(GS + "!" + "\x00")
+    lines.append(ESC + "E" + "\x00")
+    if sale.get("payment_method"):
+        lines.append(f"Pagamento: {sale['payment_method']}\n")
+    lines.append(ESC + "a" + "\x01")
+    lines.append("Obrigado!\n")
+    lines.append("\n\n\n")
+    lines.append(GS + "V" + "\x00")
+    return "".join(lines)
+
+
+# ============================================================
+# PRINTERS + PRINT QUEUE
+# ============================================================
+class PrinterIn(BaseModel):
+    name: str
+    sector: Literal["cozinha_quente", "cozinha_fria", "bar", "buffet", "caixa"]
+    ip: str
+    port: int = 9100
+    active: bool = True
+
+
+@api.get("/printers")
+async def list_printers(user: dict = Depends(get_current_user)):
+    return await db.printers.find({}, {"_id": 0}).sort("name", 1).to_list(50)
+
+
+@api.post("/printers")
+async def create_printer(payload: PrinterIn, user: dict = Depends(require_roles("admin", "gerente"))):
+    doc = {"id": str(uuid.uuid4()), "created_at": iso(now_utc()), **payload.model_dump()}
+    await db.printers.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.put("/printers/{printer_id}")
+async def update_printer(printer_id: str, payload: PrinterIn, user: dict = Depends(require_roles("admin", "gerente"))):
+    r = await db.printers.find_one_and_update({"id": printer_id}, {"$set": payload.model_dump()}, return_document=True)
+    if not r:
+        raise HTTPException(status_code=404, detail="Impressora não encontrada")
+    r.pop("_id", None)
+    return r
+
+
+@api.delete("/printers/{printer_id}")
+async def delete_printer(printer_id: str, user: dict = Depends(require_roles("admin", "gerente"))):
+    r = await db.printers.delete_one({"id": printer_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Impressora não encontrada")
     return {"success": True}
+
+
+@api.get("/print/queue")
+async def print_queue(user: dict = Depends(get_current_user)):
+    """For the local Python agent to poll pending jobs."""
+    jobs = await db.print_jobs.find({"status": "pending"}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    return jobs
+
+
+@api.post("/print/queue/{job_id}/done")
+async def print_done(job_id: str, user: dict = Depends(get_current_user)):
+    r = await db.print_jobs.update_one({"id": job_id}, {"$set": {"status": "done", "sent_at": iso(now_utc())}})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+    return {"success": True}
+
+
+@api.post("/print/queue/{job_id}/fail")
+async def print_fail(job_id: str, payload: dict, user: dict = Depends(get_current_user)):
+    err = payload.get("error", "unknown")
+    await db.print_jobs.update_one(
+        {"id": job_id},
+        {"$inc": {"attempts": 1}, "$set": {"error": str(err)[:400]}},
+    )
+    return {"success": True}
+
+
+@api.get("/print/jobs")
+async def list_jobs(limit: int = 100, user: dict = Depends(get_current_user)):
+    return await db.print_jobs.find({}, {"_id": 0, "payload": 0}).sort("created_at", -1).to_list(limit)
+
+
+# ============================================================
+# KDS (Kitchen Display System)
+# ============================================================
+@api.get("/kds/{sector}")
+async def kds_for_sector(sector: str, user: dict = Depends(get_current_user)):
+    """Return all items for open orders belonging to this sector, with elapsed time."""
+    valid = {"cozinha_quente", "cozinha_fria", "bar", "buffet"}
+    if sector not in valid:
+        raise HTTPException(status_code=400, detail="Setor inválido")
+    orders = await db.orders.find({"status": "aberta"}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    tickets = []
+    now = now_utc()
+    for o in orders:
+        sector_items = [it for it in o["items"] if it["sector"] == sector and it.get("status") != "entregue"]
+        if not sector_items:
+            continue
+        heading = o["channel"] == "mesa" and f"Mesa {o.get('table_number')}" \
+            or (o["channel"] == "hotel" and f"Qto {o.get('hotel_room','')}") \
+            or (o["channel"] == "ifood" and f"iFood #{o.get('ifood_number','-')}") \
+            or (o["channel"] == "buffet" and f"Buffet {o.get('event_name','')}")
+        for it in sector_items:
+            ref = it.get("printed_at") or it["created_at"]
+            try:
+                elapsed = int((now - datetime.fromisoformat(ref)).total_seconds())
+            except Exception:
+                elapsed = 0
+            tickets.append({
+                "order_id": o["id"],
+                "order_code": o["code"],
+                "channel": o["channel"],
+                "heading": heading,
+                "operator_name": o["operator_name"],
+                "item_id": it["id"],
+                "product_name": it["product_name"],
+                "quantity": it["quantity"],
+                "notes": it.get("notes"),
+                "status": it.get("status", "pendente"),
+                "printed": it.get("printed", False),
+                "created_at": it["created_at"],
+                "elapsed_seconds": elapsed,
+            })
+    return tickets
+
+
+class KdsUpdateIn(BaseModel):
+    status: Literal["pendente", "preparando", "pronto", "entregue"]
+
+
+@api.post("/kds/orders/{order_id}/items/{item_id}/status")
+async def kds_update_item(order_id: str, item_id: str, payload: KdsUpdateIn, user: dict = Depends(get_current_user)):
+    r = await db.orders.update_one(
+        {"id": order_id, "items.id": item_id},
+        {"$set": {"items.$.status": payload.status}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    return {"success": True}
+
+
+# ============================================================
+# Bill Split (dividir conta em N notas)
+# ============================================================
+class OrderSplitCloseIn(BaseModel):
+    payment_method: Literal["dinheiro", "pix", "credito", "debito", "hotel_lancamento"]
+    discount: float = 0
+    service_fee_percent: float = 10.0
+    splits: int = 1  # dividir em N notas iguais
+
+
+@api.post("/orders/{order_id}/close-split")
+async def close_order_split(order_id: str, payload: OrderSplitCloseIn, user: dict = Depends(get_current_user)):
+    """Close the order and create N sales dividing the total equally."""
+    if payload.splits < 1 or payload.splits > 20:
+        raise HTTPException(status_code=400, detail="Número de divisões inválido (1-20)")
+
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Comanda não encontrada")
+    if order["status"] != "aberta":
+        raise HTTPException(status_code=400, detail="Comanda não está aberta")
+
+    subtotal = order["subtotal"]
+    service_fee = round(subtotal * (payload.service_fee_percent / 100), 2)
+    discount = payload.discount or 0
+    total = max(0.0, subtotal + service_fee - discount)
+
+    # Stock decrement (once)
+    for it in order["items"]:
+        product = await db.products.find_one({"id": it["product_id"]}, {"_id": 0})
+        if not product or product.get("sector") == "buffet":
+            continue
+        await db.products.update_one({"id": it["product_id"]}, {"$inc": {"stock": -it["quantity"]}})
+        await db.stock_movements.insert_one({
+            "id": str(uuid.uuid4()),
+            "product_id": it["product_id"],
+            "product_name": it["product_name"],
+            "type": "saida",
+            "quantity": it["quantity"],
+            "reason": f"Comanda {order['code']}",
+            "created_at": iso(now_utc()),
+            "created_by": user["name"],
+        })
+
+    customer_name = "Consumidor"
+    if order["channel"] == "mesa":
+        customer_name = f"Mesa {order.get('table_number')}"
+    elif order["channel"] == "hotel":
+        customer_name = f"Hóspede Qto {order.get('hotel_room')}"
+    elif order["channel"] == "ifood":
+        customer_name = f"iFood #{order.get('ifood_number','-')}"
+    elif order["channel"] == "buffet":
+        customer_name = f"Evento: {order.get('event_name','-')}"
+
+    N = payload.splits
+    per_total = round(total / N, 2)
+    per_sub = round(subtotal / N, 2)
+    per_service = round(service_fee / N, 2)
+    per_disc = round(discount / N, 2)
+
+    sale_ids = []
+    ts = int(now_utc().timestamp())
+    for i in range(N):
+        # Adjust last split to absorb rounding
+        if i == N - 1:
+            s_total = round(total - per_total * (N - 1), 2)
+            s_sub = round(subtotal - per_sub * (N - 1), 2)
+            s_service = round(service_fee - per_service * (N - 1), 2)
+            s_disc = round(discount - per_disc * (N - 1), 2)
+        else:
+            s_total, s_sub, s_service, s_disc = per_total, per_sub, per_service, per_disc
+
+        sid = str(uuid.uuid4())
+        sale_doc = {
+            "id": sid,
+            "code": f"V{ts}-{i+1}",
+            "order_id": order_id,
+            "order_code": order["code"],
+            "channel": order["channel"],
+            "customer_id": order.get("customer_id"),
+            "customer_name": f"{customer_name} · Nota {i+1}/{N}",
+            "operator_id": user["id"],
+            "operator_name": user["name"],
+            "items": [{
+                "product_id": it["product_id"],
+                "product_name": it["product_name"],
+                "quantity": it["quantity"],
+                "unit_price": it["unit_price"],
+                "line_total": it["line_total"],
+            } for it in order["items"]] if i == 0 else [],  # only 1st keeps items for reports
+            "subtotal": s_sub,
+            "service_fee": s_service,
+            "discount": s_disc,
+            "total": s_total,
+            "payment_method": payload.payment_method,
+            "status": "concluida",
+            "split_index": i + 1,
+            "split_total": N,
+            "created_at": iso(now_utc()),
+        }
+        await db.sales.insert_one(sale_doc)
+        sale_ids.append(sid)
+
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {
+            "status": "fechada",
+            "payment_method": payload.payment_method,
+            "discount": discount,
+            "service_fee": service_fee,
+            "total": total,
+            "closed_at": iso(now_utc()),
+            "sale_ids": sale_ids,
+            "splits": N,
+        }},
+    )
+    if order.get("table_id"):
+        await db.tables.update_one({"id": order["table_id"]}, {"$set": {"status": "livre", "current_order_id": None}})
+
+    return {"success": True, "sale_ids": sale_ids, "total": total, "splits": N, "per_person": per_total}
 
 
 api.get("/health")(lambda: {"status": "ok"})

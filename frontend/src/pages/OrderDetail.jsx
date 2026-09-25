@@ -68,6 +68,7 @@ export default function OrderDetail() {
   const [pay, setPay] = useState("pix");
   const [discount, setDiscount] = useState(0);
   const [servicePercent, setServicePercent] = useState(10);
+  const [splits, setSplits] = useState(1);
 
   const load = () => api.get(`/orders/${id}`).then(r => setOrder(r.data));
   useEffect(() => { load(); api.get("/products").then(r => setProducts(r.data.filter(p => p.active))); }, [id]);
@@ -102,13 +103,26 @@ export default function OrderDetail() {
 
   const closeOrder = async () => {
     try {
-      const r = await api.post(`/orders/${id}/close`, {
-        payment_method: pay,
-        discount: Number(discount || 0),
-        service_fee_percent: Number(servicePercent || 0),
-      });
-      toast.success(`Comanda fechada · ${brl(r.data.total)}`);
-      printCupom(r.data.sale_id);
+      const N = Math.max(1, Math.min(20, Number(splits) || 1));
+      if (N > 1) {
+        const r = await api.post(`/orders/${id}/close-split`, {
+          payment_method: pay,
+          discount: Number(discount || 0),
+          service_fee_percent: Number(servicePercent || 0),
+          splits: N,
+        });
+        toast.success(`Comanda fechada em ${N} notas · ${brl(r.data.total)} (${brl(r.data.per_person)} cada)`);
+        // print each split cupom
+        r.data.sale_ids.forEach((sid, i) => setTimeout(() => printCupom(sid), i * 400));
+      } else {
+        const r = await api.post(`/orders/${id}/close`, {
+          payment_method: pay,
+          discount: Number(discount || 0),
+          service_fee_percent: Number(servicePercent || 0),
+        });
+        toast.success(`Comanda fechada · ${brl(r.data.total)}`);
+        printCupom(r.data.sale_id);
+      }
       setCloseDlg(false);
       nav("/mesas");
     } catch (err) { toast.error(formatApiError(err)); }
@@ -226,6 +240,15 @@ export default function OrderDetail() {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1"><Label>Taxa serviço %</Label><Input type="number" value={servicePercent} onChange={(e) => setServicePercent(e.target.value)} data-testid="input-taxa-servico" /></div>
               <div className="space-y-1"><Label>Desconto</Label><Input type="number" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} data-testid="input-desconto-close" /></div>
+            </div>
+            <div className="space-y-1">
+              <Label>Dividir em quantas notas?</Label>
+              <div className="flex items-center gap-2">
+                <Input type="number" min="1" max="20" value={splits} onChange={(e) => setSplits(e.target.value)} className="w-24" data-testid="input-splits" />
+                <div className="text-xs text-slate-500">
+                  {splits > 1 ? <>Cada nota: <span className="font-mono font-semibold text-emerald-700">{brl(total / (Number(splits) || 1))}</span></> : "Nota única"}
+                </div>
+              </div>
             </div>
             <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1">
               <div className="flex justify-between"><span>Subtotal</span><span className="font-mono">{brl(subtotal)}</span></div>

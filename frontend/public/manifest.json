@@ -1,0 +1,32 @@
+{
+  "short_name": "PDV Pro",
+  "name": "PDV Pro — Restaurante",
+  "description": "Sistema de gestão para restaurantes, comandas, iFood, hotel e buffet",
+  "start_url": "/mesas",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0F172A",
+  "background_color": "#0F172A",
+  "categories": ["business", "productivity", "food"],
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Salão · Mesas", "url": "/mesas", "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Comandas", "url": "/comandas", "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192" }] },
+    { "name": "KDS Cozinha", "url": "/kds", "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192" }] }
+  ]
+}
