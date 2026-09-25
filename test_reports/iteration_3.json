@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 3 (Print queue + KDS + Bill-Split + PWA + Mobile drawer) — full backend + frontend testing. All 12 pytest cases pass (12/12) covering: Printers CRUD with role guard (operador 403), mark-printed enqueues ESC/POS job with sector printer, mark-printed without printer still marks items printed=True/status=preparando but enqueues 0 jobs, print/queue returns pending jobs, /done removes from queue, /fail increments attempts and stores error, KDS invalid sector 400, KDS tickets include order_code/quantity/product_name/elapsed_seconds/status and status update reflects, close-split with 5 creates 5 sales V{ts}-1..5 (sum≈total, mesa freed, order fechada with sale_ids), close-split rejects splits=0/21, PWA manifest.json and service-worker.js serve 200. ESC/POS payload validated to contain \\x1b, \\x1d, 'COZINHA QUENTE', 'MESA {N}', and product name. Frontend: admin login OK; sidebar shows KDS Cozinha + Impressoras (admin) + Salão·Mesas; /impressoras loads with tabs (Impressoras/Fila), Nova impressora dialog creates a printer that appears in the table; Fila tab shows print jobs from mark-printed backend flow; /kds shows 4 sectors, click opens /kds/cozinha_quente with 3 columns (Pendente/Preparando/Pronto) and existing ticket for Mesa 1 with live-updating cronometer (24:28 -> 24:29); PWA assets 200; mobile viewport 390px hides sidebar and shows hamburger, clicking opens drawer with all nav links, clicking a link navigates (URL=/comandas) and closes drawer.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Printers dialog", "issues": ["React a11y warning: DialogContent missing Description/aria-describedby (radix). Non-breaking. Add <DialogDescription> or aria-describedby to /app/frontend/src/pages/Printers.jsx dialog (and possibly to OrderDetail close dialog)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/test_restaurant.py",
+    "/app/test_reports/pytest/iteration3_results.xml"
+  ],
+  "action_items": [
+    "Optional a11y: add DialogDescription (or aria-describedby) to Printers 'Nova impressora' dialog and OrderDetail 'Fechar conta' dialog to silence radix warnings.",
+    "Consider: /api/print/queue/{job_id}/fail should probably also set status='failed' when attempts exceed a threshold; currently it only stores error and increments attempts, and job stays 'pending' so agent will retry forever."
+  ],
+  "critical_code_review_comments": [
+    "server.py mark-printed (L906-914): items are marked printed=True and status=preparando BEFORE the enqueue update; enqueue happens first, but if the mongo enqueue partially fails, items still get flipped. Consider transactional consistency or reorder.",
+    "server.py print_fail (L1067): never transitions status to 'failed' — jobs will be retried forever. No max_attempts guard.",
+    "server.py close-split (L1224-1230): only first split keeps items (comment says 'only 1st keeps items for reports'). This will skew per-item/product sales reports if reports iterate sales. Consider distributing items proportionally or storing at order level only.",
+    "server.py escpos_kitchen_ticket (L879-883): uses `and`/`or` chain trick for conditional heading — fragile for non-mesa channels if any expression evaluates falsy. Better to use explicit if/elif.",
+    "server.py mark-printed: any authenticated user can mark-printed & advance items — no role guard (consistent with rest of order flow, but note operador can too).",
+    "OrderDetail.jsx L216-217: cart preview uses fixed 10% service (unchanged from iter 2); doesn't reflect user's servicePercent from close dialog. Cosmetic.",
+    "Printers.jsx polls /printers + /print/jobs every 5s regardless of tab visibility; low cost but consider stopping when tab is hidden.",
+    "KDS.jsx polls every 4s + a 1s tick timer — fine for KDS displays but may drain battery on mobile."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration3.py"],
+  "success_rate": {"backend": "100% (12/12 pytest)", "frontend": "100% of scoped flows"},
+  "test_credentials": "admin@pdvpro.com/admin123, operador@pdvpro.com/operador123",
+  "seed_data_creation": "During pytest run: created 1 printer (TEST_Printer_CQ deleted by fixture teardown); created 3 mesa orders (1 closed via close-split=5 producing 5 sales, 1 cancelled after fail-test, 1 cancelled after no-printer test). UI test also created and deleted TEST_UI_Bar printer.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Iteration 3 flows (Printers/Print Queue/KDS/Close-Split/PWA/Mobile drawer) are verified working end-to-end. Regression tests in /app/backend/tests/test_iteration3.py + test_restaurant.py — both pass. When testing mobile drawer sidebar links with playwright, note there are 2 sibling <a> elements per nav item (desktop + mobile drawer); use locator.last on mobile viewport (390x844) to hit the visible drawer version. Existing seed data: TEST_ printers should be cleaned up by fixtures; any leftover TEST_UI_Bar was manually deleted.",
+  "rca of the issue": "N/A — no blocking issues found."
+}
