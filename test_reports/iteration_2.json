@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 2 (Restaurant pivot) - Both backend and frontend tested end-to-end. All critical restaurant flows work: 30 mesas seed, mesa/hotel/ifood/buffet orders, items enrichment with sector, mark-printed, close_order with 10% service fee + stock decrement (buffet skipped), cancel_order role check, sales list with channel populated. Frontend: admin login, sidebar shows Salão/Comandas/Balcão, /mesas renders 30 mesas, clicking free mesa opens comanda, adding product updates subtotal and total (10% service), pré-conta and cozinha 80mm layouts render correctly, fechar conta closes comanda, opens cupom popup and navigates to /mesas, /comandas tabs (abertas/fechadas/canceladas) present, /comanda/novo?channel=hotel creates order successfully.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "OrderDetail PageHeader", "issues": ["React DOM warning: <div> (Badge) nested inside <p> in Layout.PageHeader subtitle. OrderDetail.jsx line 141 passes a <div>...<Badge/></div> as subtitle prop, but Layout.jsx line 102 wraps subtitle in <p>. Non-breaking hydration warning but should be fixed by changing <p> to <div> in PageHeader (Layout.jsx line 102)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_restaurant.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: Fix React hydration warning in /app/frontend/src/components/Layout.jsx line 102 - change <p> wrapping subtitle to <div> since subtitle prop can contain block elements (Badge/div)."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 869: `api.get(\"/health\")(lambda: ...)` uses a sync lambda registered directly on the router — works but unusual; prefer @api.get async style.",
+    "close_order endpoint does not require admin/gerente role — any logged-in operator can close comandas; verify this matches business rules.",
+    "OrderDetail preview total in cart uses fixed 10% service (line 202-203) instead of using the user-configurable servicePercent state; can mislead before opening close dialog.",
+    "add_items endpoint does not enforce stock availability at add time; only checked implicitly during close_order (which does not check stock either — just decrements). Non-buffet items could go negative in stock.",
+    "close_order stock decrement (line 774) has no stock availability check — allows negative stock."
+  ],
+  "updated_files": ["/app/backend/tests/test_restaurant.py"],
+  "success_rate": {"backend": "100% (8/8 pytest)", "frontend": "100% of scoped flows"},
+  "test_credentials": "admin@pdvpro.com/admin123, gerente@pdvpro.com/gerente123, operador@pdvpro.com/operador123",
+  "seed_data_creation": "Test created ~4 orders (mesa closed, hotel open, ifood open, buffet closed, mesa cancelled) and 2 sales via close_order during pytest run. Consumed 2 units of one non-buffet product (stock decrement verified).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend restaurant endpoints all pass in /app/backend/tests/test_restaurant.py (pytest, 8/8). Frontend flows (mesas -> comanda -> add item -> print kitchen/preconta -> fechar conta -> /comandas -> nova hotel) all work with data-testids as specified. Only cosmetic React warning about <div> inside <p> in PageHeader (Layout.jsx L102). If retesting, note that seed sales (25) remain in DB and new sales are appended; close_order-generated sales have `channel` field, historical seed sales do not.",
+  "rca of the issue": "N/A - no blocking issues found"
+}
